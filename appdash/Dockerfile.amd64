@@ -1,0 +1,22 @@
+FROM golang:alpine AS build-env
+RUN apk --no-cache add git
+RUN addgroup -g 10001 appdash && adduser -D -u 10001 -G appdash appdash
+RUN mkdir -p /go/src/sourcegraph.com/sourcegraph
+RUN git clone https://github.com/sourcegraph/appdash /go/src/sourcegraph.com/sourcegraph/appdash
+WORKDIR /go/src/sourcegraph.com/sourcegraph/appdash/cmd/appdash
+RUN go get ./...
+RUN CGO_ENABLED=0 go build -a -installsuffix cgo -ldflags "-s -w" -o /appdash
+
+FROM alpine AS cert-env
+RUN apk --no-cache add ca-certificates
+
+FROM scratch
+COPY --from=cert-env /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build-env /etc/passwd /etc/passwd
+COPY --from=build-env /etc/group /etc/group
+COPY --from=build-env /appdash /appdash
+EXPOSE 7700
+EXPOSE 7701
+USER appdash
+ENTRYPOINT ["/appdash"]
+CMD ["serve"]
